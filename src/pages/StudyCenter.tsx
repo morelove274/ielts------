@@ -1096,28 +1096,53 @@ function DictationView({ onBack }: { onBack: () => void }) {
     return () => clearInterval(timer);
   }, [startTime]);
 
+  // Build full playable text for the current item (full sentence or single word).
+  const getFullText = () => {
+    if (!currentSentence) return '';
+    return currentSentence.en && currentSentence.en.trim()
+      ? currentSentence.en
+      : (currentSentence.words || []).join(' ');
+  };
+
+  // Pre-warm the voices list on mount so the very first utterance plays without delay.
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.getVoices();
+        // Some browsers fire `voiceschanged` asynchronously; no-op listener to ensure load.
+        const noop = () => { /* voices ready */ };
+        window.speechSynthesis.addEventListener('voiceschanged', noop, { once: true });
+        return () => window.speechSynthesis.removeEventListener('voiceschanged', noop);
+      }
+    } catch (e) {
+      console.log('[v0] prewarm voices failed', e);
+    }
+  }, []);
+
   // Auto-play audio & focus input whenever the question (sentence or word) changes,
   // including the very first render after entering the page.
   useEffect(() => {
     if (!currentSentence) return;
-    const word = currentSentence.words?.[activeWordIndex];
     inputRef.current?.focus();
-    if (!word) return;
 
-    // Some browsers need the voices list to be populated before speaking.
-    // Using a small delay + cancel ensures a reliable first-play on mount.
-    const t = setTimeout(() => {
-      try {
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(word);
-        utter.lang = 'en-US';
-        utter.rate = 0.9;
-        window.speechSynthesis.speak(utter);
-      } catch (e) {
-        console.log('[v0] speechSynthesis failed', e);
-      }
-    }, 300);
-    return () => clearTimeout(t);
+    // On entering a new item (activeWordIndex === 0), always read the FULL sentence/word.
+    // When advancing word-by-word within the same item, read just that word for focus.
+    const fullText = getFullText();
+    const wordText = currentSentence.words?.[activeWordIndex] || '';
+    const text = activeWordIndex === 0 ? fullText : wordText;
+    if (!text) return;
+
+    try {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'en-US';
+      utter.rate = currentLevel?.type === 'sentence' ? 0.95 : 0.9;
+      // Speak immediately - the effect already runs after commit, so no timer delay needed.
+      window.speechSynthesis.speak(utter);
+    } catch (e) {
+      console.log('[v0] speechSynthesis failed', e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLevelIndex, reviewCursor, mode, activeWordIndex, currentSentence]);
 
   // Persist current progress whenever it changes (normal mode only).
@@ -1342,7 +1367,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
             {currentSentence.zh}
           </h3>
           <button
-            onClick={() => speak(currentSentence.words?.[activeWordIndex] || '')}
+            onClick={() => speak(getFullText())}
             className="flex items-center gap-2 mx-auto px-6 py-2.5 bg-surface-container-low hover:bg-surface-container-high text-primary rounded-full transition-all font-bold text-sm"
           >
             <Volume2 className="w-5 h-5" /> 听到什么？循环播放
