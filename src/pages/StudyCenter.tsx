@@ -1311,17 +1311,17 @@ function DictationView({ onBack }: { onBack: () => void }) {
   if (!currentLevel || !currentSentence) return null;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
-            <ChevronLeft className="w-6 h-6" />
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-2 sm:space-y-3 px-3 sm:px-0">
+      <div className="flex items-start sm:items-center justify-between flex-wrap gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+          <button onClick={onBack} className="p-2 hover:bg-surface-container-low rounded-full transition-colors shrink-0">
+            <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
-          <div className="flex flex-col">
+          <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-3xl font-black font-headline">雅思听写打字特训</h2>
+              <h2 className="text-lg sm:text-2xl md:text-3xl font-black font-headline truncate">雅思听写打字特训</h2>
               {mode === 'review' && (
-                <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 text-[10px] font-black rounded-full uppercase tracking-[0.2em] border border-amber-500/20">
+                <span className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 bg-amber-500/10 text-amber-600 text-[9px] sm:text-[10px] font-black rounded-full uppercase tracking-[0.15em] sm:tracking-[0.2em] border border-amber-500/20">
                   <Sparkles className="w-3 h-3" />
                   复习模式
                 </span>
@@ -1329,25 +1329,25 @@ function DictationView({ onBack }: { onBack: () => void }) {
             </div>
             <button
               onClick={resetProgress}
-              className="text-[10px] w-fit font-bold text-red-500 hover:underline flex items-center gap-1 mt-1"
+              className="text-[10px] w-fit font-bold text-red-500 hover:underline flex items-center gap-1 mt-0.5 sm:mt-1"
             >
               <RotateCcw className="w-3 h-3" /> 重置进度
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           {mode === 'review' && (
             <button
               onClick={exitReviewMode}
-              className="px-4 py-2 text-[11px] font-black text-on-surface-variant bg-surface-container-low hover:bg-surface-container-high rounded-2xl border border-outline-variant/10 transition-colors"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-[11px] font-black text-on-surface-variant bg-surface-container-low hover:bg-surface-container-high rounded-xl sm:rounded-2xl border border-outline-variant/10 transition-colors whitespace-nowrap"
             >
               跳过复习
             </button>
           )}
-          <div className="px-6 py-2 bg-surface-container-low rounded-2xl border border-outline-variant/10">
-            <span className="text-xs font-black text-on-surface-variant">
+          <div className="px-3 sm:px-6 py-1.5 sm:py-2 bg-surface-container-low rounded-xl sm:rounded-2xl border border-outline-variant/10 flex-1 sm:flex-none text-center">
+            <span className="text-[10px] sm:text-xs font-black text-on-surface-variant">
               {mode === 'review' ? (
-                <>复习中 {reviewCursor + 1} / {reviewQueue.length} · {currentLevel.type === 'word' ? '单词' : '句子'}</>
+                <>复习 {reviewCursor + 1}/{reviewQueue.length} · {currentLevel.type === 'word' ? '单词' : '句子'}</>
               ) : (
                 <>关卡 {currentLevelIndex + 1}/{TOTAL_LEVELS} · {currentLevel.type === 'word' ? '单词' : '句子'} {currentLevel.typeIndex + 1}/{currentLevel.type === 'word' ? WORD_COUNT : SENT_COUNT}</>
               )}
@@ -1358,19 +1358,19 @@ function DictationView({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="bg-surface-container-lowest p-5 rounded-[2rem] border border-outline-variant/10 shadow-2xl space-y-4 flex flex-col items-center">
-        <div className="text-center space-y-2">
-          <span className="px-4 py-1.5 bg-primary/10 text-primary text-[10px] font-black rounded-full uppercase tracking-[0.2em]">
+      <div className="bg-surface-container-lowest p-3 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-outline-variant/10 shadow-xl sm:shadow-2xl space-y-3 sm:space-y-4 flex flex-col items-center">
+        <div className="text-center space-y-2 w-full">
+          <span className="px-3 sm:px-4 py-1 sm:py-1.5 bg-primary/10 text-primary text-[10px] font-black rounded-full uppercase tracking-[0.15em] sm:tracking-[0.2em] inline-block">
             Listen & Type
           </span>
-          <h3 className="text-5xl font-black text-on-surface tracking-tight leading-tight">
+          <h3 className="text-2xl sm:text-4xl md:text-5xl font-black text-on-surface tracking-tight leading-tight text-balance px-2">
             {currentSentence.zh}
           </h3>
           <button
             onClick={() => speak(getFullText())}
-            className="flex items-center gap-2 mx-auto px-6 py-2.5 bg-surface-container-low hover:bg-surface-container-high text-primary rounded-full transition-all font-bold text-sm"
+            className="flex items-center gap-2 mx-auto px-4 sm:px-6 py-2 sm:py-2.5 bg-surface-container-low hover:bg-surface-container-high text-primary rounded-full transition-all font-bold text-xs sm:text-sm"
           >
-            <Volume2 className="w-5 h-5" /> 听到什么？循环播放
+            <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" /> 听到什么？循环播放
           </button>
         </div>
 
@@ -1391,7 +1391,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
               autoCapitalize="off"
               spellCheck={false}
               enterKeyHint="send"
-              className={`w-full pl-8 pr-24 py-6 text-center text-3xl font-black bg-transparent border-b-8 transition-all duration-300 outline-none ${
+              className={`w-full pl-4 sm:pl-8 pr-20 sm:pr-24 py-4 sm:py-6 text-center text-xl sm:text-2xl md:text-3xl font-black bg-transparent border-b-4 sm:border-b-8 transition-all duration-300 outline-none ${
                 status === 'success'
                   ? 'border-green-500 text-green-600'
                   : status === 'error'
@@ -1404,7 +1404,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
               onClick={() => handleCheck(inputValue)}
               disabled={isLocked || !inputValue.trim()}
               aria-label="确认提交"
-              className={`absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-black transition-all ${
+              className={`absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm font-black transition-all min-h-[40px] ${
                 isLocked || !inputValue.trim()
                   ? 'bg-surface-container-low text-on-surface-variant/40 cursor-not-allowed'
                   : 'bg-primary text-on-primary hover:opacity-90 active:scale-95 shadow-md'
@@ -1415,7 +1415,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
             </button>
           </div>
 
-          <p className="text-center text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-[0.2em]">
+          <p className="text-center text-[9px] sm:text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-[0.15em] sm:tracking-[0.2em]">
             按 Enter 或点击确认提交
           </p>
 
@@ -1426,7 +1426,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className={`text-center font-black text-lg ${
+                className={`text-center font-black text-sm sm:text-lg ${
                   status === 'success' ? 'text-green-600' : 'text-red-500'
                 }`}
               >
@@ -1441,16 +1441,16 @@ function DictationView({ onBack }: { onBack: () => void }) {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="rounded-2xl border-2 border-amber-300 bg-amber-50 px-6 py-4 text-center"
+                className="rounded-xl sm:rounded-2xl border-2 border-amber-300 bg-amber-50 px-4 sm:px-6 py-3 sm:py-4 text-center"
               >
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 mb-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.15em] sm:tracking-[0.2em] text-amber-600 mb-1 sm:mb-2">
                   提示 Hint
                 </p>
-                <p className="text-sm font-bold text-amber-800 mb-1">{currentSentence.zh}</p>
-                <p className="text-2xl font-black tracking-wide text-amber-900">
+                <p className="text-xs sm:text-sm font-bold text-amber-800 mb-1">{currentSentence.zh}</p>
+                <p className="text-lg sm:text-2xl font-black tracking-wide text-amber-900">
                   {currentSentence.words?.[activeWordIndex]?.replace(/[.,?!]/g, '') || ''}
                 </p>
-                <p className="mt-2 text-xs font-bold text-amber-600">
+                <p className="mt-1 sm:mt-2 text-[10px] sm:text-xs font-bold text-amber-600">
                   请输入正确答案以继续
                 </p>
               </motion.div>
@@ -1458,14 +1458,14 @@ function DictationView({ onBack }: { onBack: () => void }) {
           </AnimatePresence>
         </div>
 
-        <div className="flex gap-12">
+        <div className="flex gap-8 sm:gap-12">
           <div className="text-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">已对</p>
-            <p className="text-2xl font-black">{correctCount}</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1">已对</p>
+            <p className="text-xl sm:text-2xl font-black">{correctCount}</p>
           </div>
           <div className="text-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">错误</p>
-            <p className="text-2xl font-black text-red-500">{errorCount}/3</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1">错误</p>
+            <p className="text-xl sm:text-2xl font-black text-red-500">{errorCount}/3</p>
           </div>
         </div>
       </div>
