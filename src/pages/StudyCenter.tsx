@@ -901,28 +901,33 @@ function DictationView({ onBack }: { onBack: () => void }) {
   const [message, setMessage] = useState('');
   const [errorCount, setErrorCount] = useState(0);
   const [showTip, setShowTip] = useState(false);
-  
-  const [timeElapsed, setTimeElapsed] = useState(() => 
+  const [isLocked, setIsLocked] = useState(false); // locks input during auto-jump window
+
+  const [timeElapsed, setTimeElapsed] = useState(() =>
     (saved && saved.currentIndex === initialIndex && saved.timeElapsed) ? saved.timeElapsed : 0
   );
   const [startTime, setStartTime] = useState(() => {
     const elapsed = (saved && saved.currentIndex === initialIndex && saved.timeElapsed) ? saved.timeElapsed : 0;
     return Date.now() - (elapsed * 1000);
   });
-  const [wpm, setWpm] = useState(() => 
+  const [wpm, setWpm] = useState(() =>
     (saved && saved.currentIndex === initialIndex && saved.wpm) ? saved.wpm : 0
   );
-  const [correctCount, setCorrectCount] = useState(() => 
+  const [correctCount, setCorrectCount] = useState(() =>
     (saved && saved.currentIndex === initialIndex && saved.correctCount) ? saved.correctCount : 0
+  );
+  const [totalAttempts, setTotalAttempts] = useState(() =>
+    (saved && saved.currentIndex === initialIndex && saved.totalAttempts) ? saved.totalAttempts : 0
   );
 
   const currentSentence = DICTATION_DATA?.[currentIndex];
   const inputRef = useRef<HTMLInputElement>(null);
+  const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const playSound = (type: 'success' | 'error') => {
     const audio = new Audio(
-      type === 'success' 
-        ? 'https://assets.mixkit.co/active_storage/sfx/600/600-preview.mp3' 
+      type === 'success'
+        ? 'https://assets.mixkit.co/active_storage/sfx/600/600-preview.mp3'
         : 'https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3'
     );
     audio.play().catch(e => console.log('Audio play blocked', e));
@@ -937,29 +942,36 @@ function DictationView({ onBack }: { onBack: () => void }) {
     window.speechSynthesis.speak(utterance);
   };
 
+  // Fully clear everything for a fresh question
   const resetUIState = () => {
     setInputValue('');
     setStatus('idle');
     setMessage('');
     setErrorCount(0);
     setShowTip(false);
+    setIsLocked(false);
   };
 
   const nextQuestion = () => {
     if (!currentSentence) return;
-    
-    // Logic for next word or next sentence
+
+    // Clear any pending auto-jump
+    if (jumpTimerRef.current) {
+      clearTimeout(jumpTimerRef.current);
+      jumpTimerRef.current = null;
+    }
+
+    // Move to next word within the current sentence, or to next sentence
     if (activeWordIndex < (currentSentence.words?.length || 0) - 1) {
       setActiveWordIndex(prev => prev + 1);
       resetUIState();
     } else {
-      // Jump to next sentence
       if (currentIndex < (DICTATION_DATA?.length || 0) - 1) {
         setCurrentIndex(prev => prev + 1);
         setActiveWordIndex(0);
         resetUIState();
       } else {
-        // End of library
+        // End of library - loop back to start
         setCurrentIndex(0);
         setActiveWordIndex(0);
         resetUIState();
@@ -975,13 +987,19 @@ function DictationView({ onBack }: { onBack: () => void }) {
     return () => clearInterval(timer);
   }, [startTime]);
 
+  // Auto-play audio & focus input when question changes
   useEffect(() => {
     if (!currentSentence) return;
-  }, [currentIndex, currentSentence]);
-
-  useEffect(() => {
     inputRef.current?.focus();
-  }, [currentIndex, activeWordIndex, status]);
+  }, [currentIndex, activeWordIndex, currentSentence]);
+
+  // Clean up pending timers on unmount
+  useEffect(() => {
+    return () => {
+      if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
+      window.speechSynthesis.cancel();
+    };
+  }, []);
 
   // Real-time progress persistence
   useEffect(() => {
@@ -990,58 +1008,77 @@ function DictationView({ onBack }: { onBack: () => void }) {
       activeWordIndex,
       timeElapsed,
       wpm,
-      correctCount
+      correctCount,
+      totalAttempts
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
-  }, [currentIndex, activeWordIndex, timeElapsed, wpm, correctCount]);
+  }, [currentIndex, activeWordIndex, timeElapsed, wpm, correctCount, totalAttempts]);
 
   const handleCheck = (val: string) => {
-    if (status !== 'idle') return;
+    if (isLocked) return; // locked during auto-jump
+    if (!currentSentence) return;
+    if (!val.trim()) return;
 
     const currentTarget = currentSentence.words?.[activeWordIndex]?.toLowerCase().replace(/[.,?!]/g, '') || '';
     const inputClean = val.toLowerCase().trim();
 
+    // Count this attempt
+    const nextAttempts = totalAttempts + 1;
+    setTotalAttempts(nextAttempts);
+
     if (inputClean === currentTarget) {
-      // SUCCESS
+      // ===== SUCCESS =====
       setStatus('success');
       setMessage('回答正确，太棒了！');
+      setIsLocked(true);
       playSound('success');
-      setCorrectCount(prev => prev + 1);
+      const nextCorrect = correctCount + 1;
+      setCorrectCount(nextCorrect);
       speak(currentTarget);
-      
-      // Calculate WPM
+
+      // Recalculate WPM
       const durationMinutes = (Date.now() - startTime) / 60000;
-      setWpm(Math.round(correctCount / (durationMinutes || 1)));
+      setWpm(Math.round(nextCorrect / (durationMinutes || 1)));
 
       // Auto-jump after 1s
-      setTimeout(nextQuestion, 1000);
+      jumpTimerRef.current = setTimeout(() => {
+        nextQuestion();
+      }, 1000);
     } else {
-      // FAILURE
-      setStatus('error');
-      setMessage('回答错误，再接再厉！');
+      // ===== FAILURE =====
       playSound('error');
-      
       const newErrCount = errorCount + 1;
       setErrorCount(newErrCount);
 
       if (newErrCount >= 3) {
+        // 3rd consecutive mistake: show hint + auto-jump
+        setStatus('error');
         setShowTip(true);
-        // Display hint: CN - EN
+        setIsLocked(true);
         setMessage(`提示：${currentSentence.zh} - ${currentTarget}`);
-        // Auto-jump after 1s
-        setTimeout(nextQuestion, 1500);
+        jumpTimerRef.current = setTimeout(() => {
+          nextQuestion();
+        }, 1000);
       } else {
-        // Allow user to try again after a brief moment
-        setTimeout(() => {
-          if (status === 'error' && !showTip) {
-            setStatus('idle');
-          }
-        }, 800);
+        // Stay on question, allow re-input. No auto-jump.
+        setStatus('error');
+        setMessage('回答错误，再接再厉！');
       }
     }
   };
 
+  const handleInputChange = (val: string) => {
+    setInputValue(val);
+    // When user starts typing again after an error, clear the red highlight and message.
+    // Don't clear during success/tip auto-jump (isLocked covers that).
+    if (status === 'error' && !isLocked) {
+      setStatus('idle');
+      setMessage('');
+    }
+  };
+
   const resetProgress = () => {
+    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
     localStorage.removeItem(STORAGE_KEY);
     setCurrentIndex(0);
     setActiveWordIndex(0);
@@ -1049,8 +1086,15 @@ function DictationView({ onBack }: { onBack: () => void }) {
     setWpm(0);
     setTimeElapsed(0);
     setCorrectCount(0);
+    setTotalAttempts(0);
     setStartTime(Date.now());
   };
+
+  const accuracy = totalAttempts > 0
+    ? Math.round((correctCount / totalAttempts) * 100)
+    : null;
+
+  if (!currentSentence) return null;
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-8">
@@ -1061,7 +1105,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
           </button>
           <div className="flex flex-col">
             <h2 className="text-3xl font-black font-headline">雅思听写打字特训</h2>
-            <button 
+            <button
               onClick={resetProgress}
               className="text-[10px] w-fit font-bold text-red-500 hover:underline flex items-center gap-1 mt-1"
             >
@@ -1084,41 +1128,41 @@ function DictationView({ onBack }: { onBack: () => void }) {
           <h3 className="text-5xl font-black text-on-surface tracking-tight leading-tight">
             {currentSentence.zh}
           </h3>
-          <button 
+          <button
             onClick={() => speak(currentSentence.words?.[activeWordIndex] || '')}
             className="flex items-center gap-2 mx-auto px-6 py-2.5 bg-surface-container-low hover:bg-surface-container-high text-primary rounded-full transition-all font-bold text-sm"
           >
-            <Volume2 className="w-5 h-5" /> 听到什么？
+            <Volume2 className="w-5 h-5" /> 听到什么？循环播放
           </button>
         </div>
 
         <div className="w-full max-w-lg space-y-6">
           <div className="relative group">
-            <input 
+            <input
               ref={inputRef}
               type="text"
               value={inputValue}
-              onChange={e => {
-                setInputValue(e.target.value);
-                if (status !== 'idle') setStatus('idle');
+              onChange={e => handleInputChange(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleCheck(inputValue);
               }}
-              onKeyDown={e => e.key === 'Enter' && handleCheck(inputValue)}
               placeholder="请输入听到的单词"
-              disabled={status === 'success' || showTip}
+              disabled={isLocked}
+              autoComplete="off"
+              spellCheck={false}
               className={`w-full px-8 py-6 text-center text-3xl font-black bg-transparent border-b-8 transition-all duration-300 outline-none ${
-                status === 'success' 
-                  ? 'border-green-500 text-green-600' 
+                status === 'success'
+                  ? 'border-green-500 text-green-600'
                   : status === 'error'
                     ? 'border-red-500 text-red-600'
                     : 'border-outline-variant/10 focus:border-primary group-hover:border-primary/50'
               }`}
             />
-            <div className={`absolute bottom-0 left-0 h-2 transition-all duration-500 ${status === 'success' ? 'w-full bg-green-500' : 'w-0'}`}></div>
           </div>
 
           <AnimatePresence mode="wait">
             {message && (
-              <motion.p 
+              <motion.p
                 key={message}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1161,7 +1205,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
           </div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">正确率</p>
-            <p className="text-2xl font-black">{correctCount > 0 ? '100%' : '--'}</p>
+            <p className="text-2xl font-black">{accuracy !== null ? `${accuracy}%` : '--'}</p>
           </div>
         </div>
         <div className="bg-surface-container-low p-8 rounded-3xl border border-outline-variant/10 flex items-center gap-6">
