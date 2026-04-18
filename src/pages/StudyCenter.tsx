@@ -883,18 +883,24 @@ function LibraryView({ onBack }: { onBack: () => void }) {
 }
 
 function DictationView({ onBack }: { onBack: () => void }) {
-  const STORAGE_KEY = 'ielts_dictation_progress';
+  const HISTORY_KEY = 'ielts_dictation_history';
 
-  // Helper to load initial state from localStorage
-  const saved = useMemo(() => {
-    const s = localStorage.getItem(STORAGE_KEY);
+  // Read previous session ONCE as read-only history snapshot.
+  // Current session always starts fresh.
+  type HistoryRecord = {
+    accuracy: number | null;
+    timeElapsed: number;
+    wrongCharCount: number;
+    savedAt: number;
+  };
+  const history = useMemo<HistoryRecord | null>(() => {
+    const s = localStorage.getItem(HISTORY_KEY);
     if (!s) return null;
-    try { return JSON.parse(s); } catch (e) { return null; }
+    try { return JSON.parse(s) as HistoryRecord; } catch (e) { return null; }
   }, []);
 
-  const initialIndex = (saved && typeof saved.currentIndex === 'number') ? saved.currentIndex : 0;
-
-  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  // Fresh current session state
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [activeWordIndex, setActiveWordIndex] = useState(0);
   const [inputValue, setInputValue] = useState('');
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -903,22 +909,11 @@ function DictationView({ onBack }: { onBack: () => void }) {
   const [showTip, setShowTip] = useState(false);
   const [isLocked, setIsLocked] = useState(false); // locks input during auto-jump window
 
-  const [timeElapsed, setTimeElapsed] = useState(() =>
-    (saved && saved.currentIndex === initialIndex && saved.timeElapsed) ? saved.timeElapsed : 0
-  );
-  const [startTime, setStartTime] = useState(() => {
-    const elapsed = (saved && saved.currentIndex === initialIndex && saved.timeElapsed) ? saved.timeElapsed : 0;
-    return Date.now() - (elapsed * 1000);
-  });
-  const [wpm, setWpm] = useState(() =>
-    (saved && saved.currentIndex === initialIndex && saved.wpm) ? saved.wpm : 0
-  );
-  const [correctCount, setCorrectCount] = useState(() =>
-    (saved && saved.currentIndex === initialIndex && saved.correctCount) ? saved.correctCount : 0
-  );
-  const [totalAttempts, setTotalAttempts] = useState(() =>
-    (saved && saved.currentIndex === initialIndex && saved.totalAttempts) ? saved.totalAttempts : 0
-  );
+  const [timeElapsed, setTimeElapsed] = useState(0);
+  const [startTime, setStartTime] = useState(() => Date.now());
+  const [correctCount, setCorrectCount] = useState(0);
+  const [totalAttempts, setTotalAttempts] = useState(0);
+  const [wrongCharCount, setWrongCharCount] = useState(0);
 
   const currentSentence = DICTATION_DATA?.[currentIndex];
   const inputRef = useRef<HTMLInputElement>(null);
@@ -975,7 +970,6 @@ function DictationView({ onBack }: { onBack: () => void }) {
         setCurrentIndex(0);
         setActiveWordIndex(0);
         resetUIState();
-        localStorage.removeItem(STORAGE_KEY);
       }
     }
   };
@@ -1011,26 +1005,50 @@ function DictationView({ onBack }: { onBack: () => void }) {
     return () => clearTimeout(t);
   }, [currentIndex, activeWordIndex, currentSentence]);
 
-  // Clean up pending timers on unmount
+  // Keep a live ref of latest stats so unmount cleanup can snapshot them.
+  const statsRef = useRef({
+    correctCount: 0,
+    totalAttempts: 0,
+    timeElapsed: 0,
+    wrongCharCount: 0,
+  });
+  useEffect(() => {
+    statsRef.current = { correctCount, totalAttempts, timeElapsed, wrongCharCount };
+  }, [correctCount, totalAttempts, timeElapsed, wrongCharCount]);
+
+  // Clean up pending timers & save session snapshot on unmount.
   useEffect(() => {
     return () => {
       if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
       window.speechSynthesis.cancel();
+
+      const { correctCount: c, totalAttempts: t, timeElapsed: e, wrongCharCount: w } = statsRef.current;
+      // Only persist if user actually practised anything this session.
+      if (t > 0 || e > 5) {
+        const record: HistoryRecord = {
+          accuracy: t > 0 ? Math.round((c / t) * 100) : null,
+          timeElapsed: e,
+          wrongCharCount: w,
+          savedAt: Date.now(),
+        };
+        try {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(record));
+        } catch (err) {
+          console.log('[v0] failed saving dictation history', err);
+        }
+      }
     };
   }, []);
 
-  // Real-time progress persistence
-  useEffect(() => {
-    const progress = {
-      currentIndex,
-      activeWordIndex,
-      timeElapsed,
-      wpm,
-      correctCount,
-      totalAttempts
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
-  }, [currentIndex, activeWordIndex, timeElapsed, wpm, correctCount, totalAttempts]);
+  // Helper: count positional char mismatches + length diff between input and target.
+  const countWrongChars = (input: string, target: string) => {
+    let wrong = 0;
+    const maxLen = Math.max(input.length, target.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (input[i] !== target[i]) wrong++;
+    }
+    return wrong;
+  };
 
   const handleCheck = (val: string) => {
     if (isLocked) return; // locked during auto-jump
@@ -1050,13 +1068,8 @@ function DictationView({ onBack }: { onBack: () => void }) {
       setMessage('回答正确，太棒了！');
       setIsLocked(true);
       playSound('success');
-      const nextCorrect = correctCount + 1;
-      setCorrectCount(nextCorrect);
+      setCorrectCount(prev => prev + 1);
       speak(currentTarget);
-
-      // Recalculate WPM
-      const durationMinutes = (Date.now() - startTime) / 60000;
-      setWpm(Math.round(nextCorrect / (durationMinutes || 1)));
 
       // Auto-jump after 1s
       jumpTimerRef.current = setTimeout(() => {
@@ -1069,6 +1082,9 @@ function DictationView({ onBack }: { onBack: () => void }) {
       setErrorCount(newErrCount);
       setStatus('error');
       setMessage('回答错误，再接再厉！');
+
+      // Accumulate wrong character count for this session
+      setWrongCharCount(prev => prev + countWrongChars(inputClean, currentTarget));
 
       if (newErrCount >= 3) {
         // 3rd mistake: show persistent hint. Stay on the question.
@@ -1092,14 +1108,13 @@ function DictationView({ onBack }: { onBack: () => void }) {
 
   const resetProgress = () => {
     if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
-    localStorage.removeItem(STORAGE_KEY);
     setCurrentIndex(0);
     setActiveWordIndex(0);
     resetUIState();
-    setWpm(0);
     setTimeElapsed(0);
     setCorrectCount(0);
     setTotalAttempts(0);
+    setWrongCharCount(0);
     setStartTime(Date.now());
   };
 
@@ -1247,12 +1262,12 @@ function DictationView({ onBack }: { onBack: () => void }) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-surface-container-low p-8 rounded-3xl border border-outline-variant/10 flex items-center gap-6">
-          <div className="w-12 h-12 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
-            <Zap className="w-6 h-6" />
+          <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+            <AlertCircle className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">打字速度</p>
-            <p className="text-2xl font-black">{wpm || '--'} <span className="text-xs font-bold text-slate-300">WPM</span></p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">打错字数</p>
+            <p className="text-2xl font-black">{wrongCharCount} <span className="text-xs font-bold text-slate-300">CHARS</span></p>
           </div>
         </div>
         <div className="bg-surface-container-low p-8 rounded-3xl border border-outline-variant/10 flex items-center gap-6">
@@ -1271,6 +1286,43 @@ function DictationView({ onBack }: { onBack: () => void }) {
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">累计时长</p>
             <p className="text-2xl font-black">{timeElapsed} <span className="text-xs font-bold text-slate-300">SEC</span></p>
+          </div>
+        </div>
+      </div>
+
+      {/* Historical data from previous session */}
+      <div className="bg-surface-container-lowest p-6 md:p-8 rounded-3xl border border-outline-variant/10">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-9 h-9 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
+            <History className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-sm font-black">上一次学习记录</p>
+            <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-[0.2em]">
+              {history ? `保存于 ${new Date(history.savedAt).toLocaleString('zh-CN', { hour12: false })}` : '暂无历史数据，完成一次练习后记录会显示在这里'}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 md:gap-6">
+          <div className="bg-surface-container-low rounded-2xl px-4 py-4 text-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">正确率</p>
+            <p className="text-xl md:text-2xl font-black text-green-600">
+              {history && history.accuracy !== null ? `${history.accuracy}%` : '--'}
+            </p>
+          </div>
+          <div className="bg-surface-container-low rounded-2xl px-4 py-4 text-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">累计时长</p>
+            <p className="text-xl md:text-2xl font-black text-blue-500">
+              {history ? history.timeElapsed : '--'}
+              {history && <span className="text-[10px] font-bold text-slate-300 ml-1">SEC</span>}
+            </p>
+          </div>
+          <div className="bg-surface-container-low rounded-2xl px-4 py-4 text-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">打错字数</p>
+            <p className="text-xl md:text-2xl font-black text-red-500">
+              {history ? history.wrongCharCount : '--'}
+              {history && <span className="text-[10px] font-bold text-slate-300 ml-1">CHARS</span>}
+            </p>
           </div>
         </div>
       </div>
