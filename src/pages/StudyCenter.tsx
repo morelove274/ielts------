@@ -987,17 +987,28 @@ function DictationView({ onBack }: { onBack: () => void }) {
     return () => clearInterval(timer);
   }, [startTime]);
 
-  // Auto-play audio & focus input when question changes
+  // Auto-play audio & focus input whenever the question (sentence or word) changes,
+  // including the very first render after entering the page.
   useEffect(() => {
     if (!currentSentence) return;
     const word = currentSentence.words?.[activeWordIndex];
-    if (word) {
-      // Slight delay so the voices list is ready and UI has mounted
-      const t = setTimeout(() => speak(word), 250);
-      inputRef.current?.focus();
-      return () => clearTimeout(t);
-    }
     inputRef.current?.focus();
+    if (!word) return;
+
+    // Some browsers need the voices list to be populated before speaking.
+    // Using a small delay + cancel ensures a reliable first-play on mount.
+    const t = setTimeout(() => {
+      try {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(word);
+        utter.lang = 'en-US';
+        utter.rate = 0.9;
+        window.speechSynthesis.speak(utter);
+      } catch (e) {
+        console.log('[v0] speechSynthesis failed', e);
+      }
+    }, 300);
+    return () => clearTimeout(t);
   }, [currentIndex, activeWordIndex, currentSentence]);
 
   // Clean up pending timers on unmount
@@ -1052,32 +1063,27 @@ function DictationView({ onBack }: { onBack: () => void }) {
         nextQuestion();
       }, 1000);
     } else {
-      // ===== FAILURE =====
+      // ===== FAILURE — NEVER auto-jump on wrong answer =====
       playSound('error');
       const newErrCount = errorCount + 1;
       setErrorCount(newErrCount);
+      setStatus('error');
+      setMessage('回答错误，再接再厉！');
 
       if (newErrCount >= 3) {
-        // 3rd consecutive mistake: show hint + auto-jump
-        setStatus('error');
+        // 3rd mistake: show persistent hint. Stay on the question.
+        // User must eventually type correctly to advance.
         setShowTip(true);
-        setIsLocked(true);
-        setMessage(`提示：${currentSentence.zh} - ${currentTarget}`);
-        jumpTimerRef.current = setTimeout(() => {
-          nextQuestion();
-        }, 1000);
-      } else {
-        // Stay on question, allow re-input. No auto-jump.
-        setStatus('error');
-        setMessage('回答错误，再接再厉！');
+        // Replay the audio so the user can try again with reference.
+        speak(currentTarget);
       }
     }
   };
 
   const handleInputChange = (val: string) => {
     setInputValue(val);
-    // When user starts typing again after an error, clear the red highlight and message.
-    // Don't clear during success/tip auto-jump (isLocked covers that).
+    // When user starts typing again, clear only the transient red highlight/message.
+    // The persistent hint (showTip) stays visible until they answer correctly.
     if (status === 'error' && !isLocked) {
       setStatus('idle');
       setMessage('');
@@ -1180,6 +1186,28 @@ function DictationView({ onBack }: { onBack: () => void }) {
               >
                 {message}
               </motion.p>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {showTip && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="rounded-2xl border-2 border-amber-300 bg-amber-50 px-6 py-4 text-center"
+              >
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 mb-2">
+                  提示 Hint
+                </p>
+                <p className="text-sm font-bold text-amber-800 mb-1">{currentSentence.zh}</p>
+                <p className="text-2xl font-black tracking-wide text-amber-900">
+                  {currentSentence.words?.[activeWordIndex]?.replace(/[.,?!]/g, '') || ''}
+                </p>
+                <p className="mt-2 text-xs font-bold text-amber-600">
+                  请输入正确答案以继续
+                </p>
+              </motion.div>
             )}
           </AnimatePresence>
         </div>
