@@ -53,7 +53,8 @@ import {
   REVIEW_DATA,
   STUDY_MODULES,
   CAMBRIDGE_LIBRARY,
-  DICTATION_DATA
+  DICTATION_DATA,
+  DICTATION_SENTENCES
 } from './study/StudyData';
 
 import { useStudy } from '../contexts/StudyContext';
@@ -884,9 +885,66 @@ function LibraryView({ onBack }: { onBack: () => void }) {
 
 function DictationView({ onBack }: { onBack: () => void }) {
   const HISTORY_KEY = 'ielts_dictation_history';
+  const PROGRESS_KEY = 'ielts_dictation_progress_v2';
+  const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 
-  // Read previous session ONCE as read-only history snapshot.
-  // Current session always starts fresh.
+  // Interleaved level flow: 10 words -> 10 sentences -> 10 words ... (total up to 1000 levels)
+  const WORD_COUNT = DICTATION_DATA.length;
+  const SENT_COUNT = DICTATION_SENTENCES.length;
+  const TOTAL_LEVELS = WORD_COUNT + SENT_COUNT;
+
+  type LevelItem = {
+    id: string;
+    data: typeof DICTATION_DATA[number];
+    type: 'word' | 'sentence';
+    typeIndex: number; // 0-based index within the word or sentence array
+    levelIndex: number; // 0-based index in combined flow
+  };
+
+  // Resolve a combined-flow level index to a concrete word/sentence item.
+  const getLevelAtIndex = (L: number): LevelItem | null => {
+    if (L < 0 || L >= TOTAL_LEVELS) return null;
+    const block = Math.floor(L / 10);
+    const isWord = block % 2 === 0;
+    const typeIdx = Math.floor(block / 2) * 10 + (L % 10);
+    if (isWord) {
+      const data = DICTATION_DATA[typeIdx % WORD_COUNT];
+      return { id: data.id, data, type: 'word', typeIndex: typeIdx % WORD_COUNT, levelIndex: L };
+    }
+    const data = DICTATION_SENTENCES[typeIdx % SENT_COUNT];
+    return { id: data.id, data, type: 'sentence', typeIndex: typeIdx % SENT_COUNT, levelIndex: L };
+  };
+
+  // Find combined-flow level index from an item id (e.g. 'd23', 's41').
+  const findLevelIndexById = (id: string): number => {
+    if (id.startsWith('d')) {
+      const idx = DICTATION_DATA.findIndex(d => d.id === id);
+      if (idx < 0) return -1;
+      return Math.floor(idx / 10) * 20 + (idx % 10);
+    }
+    if (id.startsWith('s')) {
+      const idx = DICTATION_SENTENCES.findIndex(d => d.id === id);
+      if (idx < 0) return -1;
+      return Math.floor(idx / 10) * 20 + 10 + (idx % 10);
+    }
+    return -1;
+  };
+
+  // Load saved progress once on mount.
+  type ProgressRecord = {
+    currentLevelIndex?: number;
+    activeWordIndex?: number;
+    lastEntryAt?: number;
+    wrongIds?: string[];
+  };
+  const savedProgress = useMemo<ProgressRecord>(() => {
+    try {
+      const s = localStorage.getItem(PROGRESS_KEY);
+      return s ? JSON.parse(s) : {};
+    } catch { return {}; }
+  }, []);
+
+  // Previous-session history snapshot (read-only).
   type HistoryRecord = {
     accuracy: number | null;
     timeElapsed: number;
@@ -894,28 +952,66 @@ function DictationView({ onBack }: { onBack: () => void }) {
     savedAt: number;
   };
   const history = useMemo<HistoryRecord | null>(() => {
-    const s = localStorage.getItem(HISTORY_KEY);
-    if (!s) return null;
-    try { return JSON.parse(s) as HistoryRecord; } catch (e) { return null; }
+    try {
+      const s = localStorage.getItem(HISTORY_KEY);
+      return s ? (JSON.parse(s) as HistoryRecord) : null;
+    } catch { return null; }
   }, []);
 
-  // Fresh current session state
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [activeWordIndex, setActiveWordIndex] = useState(0);
+  // Decide whether to enter review mode: idle > 5h AND have problem words.
+  const initialReviewQueue = useMemo<LevelItem[] | null>(() => {
+    const ids = savedProgress.wrongIds || [];
+    const last = savedProgress.lastEntryAt || 0;
+    const idleTooLong = last > 0 && (Date.now() - last) > FIVE_HOURS_MS;
+    if (ids.length === 0 || !idleTooLong) return null;
+    const queue = ids
+      .map(id => {
+        const li = findLevelIndexById(id);
+        return li >= 0 ? getLevelAtIndex(li) : null;
+      })
+      .filter((x): x is LevelItem => x !== null);
+    return queue.length > 0 ? queue : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [mode, setMode] = useState<'normal' | 'review'>(initialReviewQueue ? 'review' : 'normal');
+  const [reviewQueue, setReviewQueue] = useState<LevelItem[]>(initialReviewQueue || []);
+  const [reviewCursor, setReviewCursor] = useState(0);
+
+  // Normal-mode progress (resumed from storage).
+  const resumedLevelIndex = Math.max(
+    0,
+    Math.min(savedProgress.currentLevelIndex ?? 0, TOTAL_LEVELS - 1)
+  );
+  const [currentLevelIndex, setCurrentLevelIndex] = useState<number>(resumedLevelIndex);
+  const [activeWordIndex, setActiveWordIndex] = useState<number>(
+    initialReviewQueue ? 0 : (savedProgress.activeWordIndex ?? 0)
+  );
+  const [wrongIds, setWrongIds] = useState<string[]>(savedProgress.wrongIds || []);
+
+  // Per-session UI state
   const [inputValue, setInputValue] = useState('');
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [errorCount, setErrorCount] = useState(0);
   const [showTip, setShowTip] = useState(false);
-  const [isLocked, setIsLocked] = useState(false); // locks input during auto-jump window
+  const [isLocked, setIsLocked] = useState(false);
 
+  // Per-session stats (always start at 0)
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [startTime, setStartTime] = useState(() => Date.now());
   const [correctCount, setCorrectCount] = useState(0);
   const [totalAttempts, setTotalAttempts] = useState(0);
   const [wrongCharCount, setWrongCharCount] = useState(0);
 
-  const currentSentence = DICTATION_DATA?.[currentIndex];
+  // Resolve the active level item (review queue or normal flow).
+  const currentLevel: LevelItem | null = useMemo(() => {
+    if (mode === 'review') return reviewQueue[reviewCursor] || null;
+    return getLevelAtIndex(currentLevelIndex);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, reviewQueue, reviewCursor, currentLevelIndex]);
+
+  const currentSentence = currentLevel?.data;
   const inputRef = useRef<HTMLInputElement>(null);
   const jumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -948,7 +1044,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
   };
 
   const nextQuestion = () => {
-    if (!currentSentence) return;
+    if (!currentLevel || !currentSentence) return;
 
     // Clear any pending auto-jump
     if (jumpTimerRef.current) {
@@ -956,18 +1052,37 @@ function DictationView({ onBack }: { onBack: () => void }) {
       jumpTimerRef.current = null;
     }
 
-    // Move to next word within the current sentence, or to next sentence
-    if (activeWordIndex < (currentSentence.words?.length || 0) - 1) {
+    const wordsLen = currentSentence.words?.length || 0;
+
+    // Move to next word within the current item first
+    if (activeWordIndex < wordsLen - 1) {
       setActiveWordIndex(prev => prev + 1);
       resetUIState();
+      return;
+    }
+
+    // Finished current item - advance based on mode
+    if (mode === 'review') {
+      if (reviewCursor < reviewQueue.length - 1) {
+        setReviewCursor(prev => prev + 1);
+        setActiveWordIndex(0);
+        resetUIState();
+      } else {
+        // Review queue exhausted -> return to normal mode at saved level
+        setMode('normal');
+        setReviewQueue([]);
+        setReviewCursor(0);
+        setActiveWordIndex(0);
+        resetUIState();
+      }
     } else {
-      if (currentIndex < (DICTATION_DATA?.length || 0) - 1) {
-        setCurrentIndex(prev => prev + 1);
+      if (currentLevelIndex < TOTAL_LEVELS - 1) {
+        setCurrentLevelIndex(prev => prev + 1);
         setActiveWordIndex(0);
         resetUIState();
       } else {
         // End of library - loop back to start
-        setCurrentIndex(0);
+        setCurrentLevelIndex(0);
         setActiveWordIndex(0);
         resetUIState();
       }
@@ -1003,7 +1118,23 @@ function DictationView({ onBack }: { onBack: () => void }) {
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [currentIndex, activeWordIndex, currentSentence]);
+  }, [currentLevelIndex, reviewCursor, mode, activeWordIndex, currentSentence]);
+
+  // Persist current progress whenever it changes (normal mode only).
+  useEffect(() => {
+    if (mode === 'review') return; // Don't overwrite saved progress while reviewing
+    const record: ProgressRecord = {
+      currentLevelIndex,
+      activeWordIndex,
+      lastEntryAt: Date.now(),
+      wrongIds,
+    };
+    try {
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify(record));
+    } catch (e) {
+      console.log('[v0] failed saving dictation progress', e);
+    }
+  }, [mode, currentLevelIndex, activeWordIndex, wrongIds]);
 
   // Keep a live ref of latest stats so unmount cleanup can snapshot them.
   const statsRef = useRef({
@@ -1052,7 +1183,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
 
   const handleCheck = (val: string) => {
     if (isLocked) return; // locked during auto-jump
-    if (!currentSentence) return;
+    if (!currentLevel || !currentSentence) return;
     if (!val.trim()) return;
 
     const currentTarget = currentSentence.words?.[activeWordIndex]?.toLowerCase().replace(/[.,?!]/g, '') || '';
@@ -1071,12 +1202,19 @@ function DictationView({ onBack }: { onBack: () => void }) {
       setCorrectCount(prev => prev + 1);
       speak(currentTarget);
 
+      // In review mode: once the user gets the whole item right on its last word,
+      // remove it from the wrong list.
+      const isLastWordOfItem = activeWordIndex >= (currentSentence.words?.length || 0) - 1;
+      if (isLastWordOfItem && currentLevel) {
+        setWrongIds(prev => prev.filter(id => id !== currentLevel.id));
+      }
+
       // Auto-jump after 1s
       jumpTimerRef.current = setTimeout(() => {
         nextQuestion();
       }, 1000);
     } else {
-      // ===== FAILURE — NEVER auto-jump on wrong answer =====
+      // ===== FAILURE - NEVER auto-jump on wrong answer =====
       playSound('error');
       const newErrCount = errorCount + 1;
       setErrorCount(newErrCount);
@@ -1090,8 +1228,12 @@ function DictationView({ onBack }: { onBack: () => void }) {
         // 3rd mistake: show persistent hint. Stay on the question.
         // User must eventually type correctly to advance.
         setShowTip(true);
-        // Replay the audio so the user can try again with reference.
         speak(currentTarget);
+
+        // Mark this item as needing review.
+        if (currentLevel) {
+          setWrongIds(prev => prev.includes(currentLevel.id) ? prev : [...prev, currentLevel.id]);
+        }
       }
     }
   };
@@ -1108,31 +1250,58 @@ function DictationView({ onBack }: { onBack: () => void }) {
 
   const resetProgress = () => {
     if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
-    setCurrentIndex(0);
+    setMode('normal');
+    setReviewQueue([]);
+    setReviewCursor(0);
+    setCurrentLevelIndex(0);
     setActiveWordIndex(0);
+    setWrongIds([]);
     resetUIState();
     setTimeElapsed(0);
     setCorrectCount(0);
     setTotalAttempts(0);
     setWrongCharCount(0);
     setStartTime(Date.now());
+    try {
+      localStorage.removeItem(PROGRESS_KEY);
+    } catch (e) {
+      console.log('[v0] failed clearing progress', e);
+    }
+  };
+
+  // Exit review mode early (e.g. skip to normal progress).
+  const exitReviewMode = () => {
+    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current);
+    setMode('normal');
+    setReviewQueue([]);
+    setReviewCursor(0);
+    setActiveWordIndex(0);
+    resetUIState();
   };
 
   const accuracy = totalAttempts > 0
     ? Math.round((correctCount / totalAttempts) * 100)
     : null;
 
-  if (!currentSentence) return null;
+  if (!currentLevel || !currentSentence) return null;
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
             <ChevronLeft className="w-6 h-6" />
           </button>
           <div className="flex flex-col">
-            <h2 className="text-3xl font-black font-headline">雅思听写打字特训</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-3xl font-black font-headline">雅思听写打字特训</h2>
+              {mode === 'review' && (
+                <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 text-[10px] font-black rounded-full uppercase tracking-[0.2em] border border-amber-500/20">
+                  <Sparkles className="w-3 h-3" />
+                  复习模式
+                </span>
+              )}
+            </div>
             <button
               onClick={resetProgress}
               className="text-[10px] w-fit font-bold text-red-500 hover:underline flex items-center gap-1 mt-1"
@@ -1141,10 +1310,26 @@ function DictationView({ onBack }: { onBack: () => void }) {
             </button>
           </div>
         </div>
-        <div className="px-6 py-2 bg-surface-container-low rounded-2xl border border-outline-variant/10">
-          <span className="text-xs font-black text-on-surface-variant">
-            关卡 {currentIndex + 1} / {DICTATION_DATA?.length} · 单词 {activeWordIndex + 1}/{currentSentence.words?.length}
-          </span>
+        <div className="flex items-center gap-2">
+          {mode === 'review' && (
+            <button
+              onClick={exitReviewMode}
+              className="px-4 py-2 text-[11px] font-black text-on-surface-variant bg-surface-container-low hover:bg-surface-container-high rounded-2xl border border-outline-variant/10 transition-colors"
+            >
+              跳过复习
+            </button>
+          )}
+          <div className="px-6 py-2 bg-surface-container-low rounded-2xl border border-outline-variant/10">
+            <span className="text-xs font-black text-on-surface-variant">
+              {mode === 'review' ? (
+                <>复习中 {reviewCursor + 1} / {reviewQueue.length} · {currentLevel.type === 'word' ? '单词' : '句子'}</>
+              ) : (
+                <>关卡 {currentLevelIndex + 1}/{TOTAL_LEVELS} · {currentLevel.type === 'word' ? '单词' : '句子'} {currentLevel.typeIndex + 1}/{currentLevel.type === 'word' ? WORD_COUNT : SENT_COUNT}</>
+              )}
+              {' · '}
+              <span className="text-on-surface-variant/60">第 {activeWordIndex + 1}/{currentSentence.words?.length} 词</span>
+            </span>
+          </div>
         </div>
       </div>
 
