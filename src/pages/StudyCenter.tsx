@@ -1286,7 +1286,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
   if (!currentLevel || !currentSentence) return null;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-8">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
@@ -1333,8 +1333,8 @@ function DictationView({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="bg-surface-container-lowest p-12 rounded-[3.5rem] border border-outline-variant/10 shadow-2xl space-y-12 flex flex-col items-center">
-        <div className="text-center space-y-4">
+      <div className="bg-surface-container-lowest p-5 rounded-[2rem] border border-outline-variant/10 shadow-2xl space-y-4 flex flex-col items-center">
+        <div className="text-center space-y-2">
           <span className="px-4 py-1.5 bg-primary/10 text-primary text-[10px] font-black rounded-full uppercase tracking-[0.2em]">
             Listen & Type
           </span>
@@ -1349,7 +1349,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
           </button>
         </div>
 
-        <div className="w-full max-w-lg space-y-6">
+        <div className="w-full max-w-lg space-y-2">
           <div className="relative group">
             <input
               ref={inputRef}
@@ -1433,7 +1433,7 @@ function DictationView({ onBack }: { onBack: () => void }) {
           </AnimatePresence>
         </div>
 
-        <div className="flex gap-12 pt-6">
+        <div className="flex gap-12">
           <div className="text-center">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">已对</p>
             <p className="text-2xl font-black">{correctCount}</p>
@@ -1445,30 +1445,30 @@ function DictationView({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-surface-container-low p-8 rounded-3xl border border-outline-variant/10 flex items-center gap-6">
-          <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-surface-container-low p-3 rounded-2xl border border-outline-variant/10 flex items-center gap-3">
+          <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center shrink-0">
             <AlertCircle className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">打错字数</p>
             <p className="text-2xl font-black">{wrongCharCount} <span className="text-xs font-bold text-slate-300">CHARS</span></p>
           </div>
         </div>
-        <div className="bg-surface-container-low p-8 rounded-3xl border border-outline-variant/10 flex items-center gap-6">
-          <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center">
+        <div className="bg-surface-container-low p-3 rounded-2xl border border-outline-variant/10 flex items-center gap-3">
+          <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">正确率</p>
             <p className="text-2xl font-black">{accuracy !== null ? `${accuracy}%` : '--'}</p>
           </div>
         </div>
-        <div className="bg-surface-container-low p-8 rounded-3xl border border-outline-variant/10 flex items-center gap-6">
-          <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center">
+        <div className="bg-surface-container-low p-3 rounded-2xl border border-outline-variant/10 flex items-center gap-3">
+          <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shrink-0">
             <Clock className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">累计时长</p>
             <p className="text-2xl font-black">{timeElapsed} <span className="text-xs font-bold text-slate-300">SEC</span></p>
           </div>
@@ -1476,9 +1476,9 @@ function DictationView({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Historical data from previous session */}
-      <div className="bg-surface-container-lowest p-6 md:p-8 rounded-3xl border border-outline-variant/10">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-9 h-9 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
+      <div className="bg-surface-container-lowest p-3 rounded-2xl border border-outline-variant/10">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-9 h-9 bg-primary/10 text-primary rounded-xl flex items-center justify-center shrink-0">
             <History className="w-4 h-4" />
           </div>
           <div>
@@ -1488,22 +1488,22 @@ function DictationView({ onBack }: { onBack: () => void }) {
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-3 md:gap-6">
-          <div className="bg-surface-container-low rounded-2xl px-4 py-4 text-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">正确率</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-surface-container-low rounded-xl px-3 py-2 text-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">正确率</p>
             <p className="text-xl md:text-2xl font-black text-green-600">
               {history && history.accuracy !== null ? `${history.accuracy}%` : '--'}
             </p>
           </div>
-          <div className="bg-surface-container-low rounded-2xl px-4 py-4 text-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">累计时长</p>
+          <div className="bg-surface-container-low rounded-xl px-3 py-2 text-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">累计时长</p>
             <p className="text-xl md:text-2xl font-black text-blue-500">
               {history ? history.timeElapsed : '--'}
               {history && <span className="text-[10px] font-bold text-slate-300 ml-1">SEC</span>}
             </p>
           </div>
-          <div className="bg-surface-container-low rounded-2xl px-4 py-4 text-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">打错字数</p>
+          <div className="bg-surface-container-low rounded-xl px-3 py-2 text-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">打错字数</p>
             <p className="text-xl md:text-2xl font-black text-red-500">
               {history ? history.wrongCharCount : '--'}
               {history && <span className="text-[10px] font-bold text-slate-300 ml-1">CHARS</span>}
