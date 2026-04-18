@@ -1162,8 +1162,11 @@ function DictationView({ onBack }: { onBack: () => void }) {
               placeholder="请输入听到的单词"
               disabled={isLocked}
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
               spellCheck={false}
-              className={`w-full px-8 py-6 text-center text-3xl font-black bg-transparent border-b-8 transition-all duration-300 outline-none ${
+              enterKeyHint="send"
+              className={`w-full pl-8 pr-24 py-6 text-center text-3xl font-black bg-transparent border-b-8 transition-all duration-300 outline-none ${
                 status === 'success'
                   ? 'border-green-500 text-green-600'
                   : status === 'error'
@@ -1171,7 +1174,25 @@ function DictationView({ onBack }: { onBack: () => void }) {
                     : 'border-outline-variant/10 focus:border-primary group-hover:border-primary/50'
               }`}
             />
+            <button
+              type="button"
+              onClick={() => handleCheck(inputValue)}
+              disabled={isLocked || !inputValue.trim()}
+              aria-label="确认提交"
+              className={`absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-black transition-all ${
+                isLocked || !inputValue.trim()
+                  ? 'bg-surface-container-low text-on-surface-variant/40 cursor-not-allowed'
+                  : 'bg-primary text-on-primary hover:opacity-90 active:scale-95 shadow-md'
+              }`}
+            >
+              <Send className="w-4 h-4" />
+              <span className="hidden sm:inline">确认</span>
+            </button>
           </div>
+
+          <p className="text-center text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-[0.2em]">
+            按 Enter 或点击确认提交
+          </p>
 
           <AnimatePresence mode="wait">
             {message && (
@@ -1897,7 +1918,7 @@ function WritingView({ onBack }: { onBack: () => void }) {
                   disabled={isAnalyzing || !userText.trim()}
                   className="px-10 py-4 bg-primary text-white rounded-2xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
                 >
-                  {isAnalyzing ? "AI 深度分析中..." : "获取 AI 评分与建议"}
+                  {isAnalyzing ? "AI 深度分析中..." : "获取 AI 评分���建议"}
                 </button>
               </div>
             </div>
