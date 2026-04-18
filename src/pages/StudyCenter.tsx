@@ -990,6 +990,13 @@ function DictationView({ onBack }: { onBack: () => void }) {
   // Auto-play audio & focus input when question changes
   useEffect(() => {
     if (!currentSentence) return;
+    const word = currentSentence.words?.[activeWordIndex];
+    if (word) {
+      // Slight delay so the voices list is ready and UI has mounted
+      const t = setTimeout(() => speak(word), 250);
+      inputRef.current?.focus();
+      return () => clearTimeout(t);
+    }
     inputRef.current?.focus();
   }, [currentIndex, activeWordIndex, currentSentence]);
 
